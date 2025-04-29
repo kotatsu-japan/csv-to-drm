@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>CSV to DRM Converter🥁</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #f7f9fc;
+      color: #333;
+      margin: 0;
+      padding: 2em;
+      max-width: 800px;
+      margin: auto;
+    }
+    h1 {
+      text-align: center;
+    }
+    h2 {
+      border-bottom: 2px solid #ddd;
+    }
+    h1, h2 {
+      color: #333;
+      padding-bottom: 0.3em;
+      margin-bottom: 1em;
+    }
+    code, pre { background: #f9f9f9; padding: 0.2em 0.4em; border-radius: 4px; }
+    li { margin-bottom: 0.5em; }
+    .section {
+      margin-bottom: 2em;
+      text-align: center;
+    }
+    .button-primary {
+      display: inline-block;
+      padding: 12px 24px;
+      font-size: 16px;
+      font-weight: bold;
+      color: white;
+      background-color: #007bff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      text-decoration: none;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      transition: background-color 0.3s ease, transform 0.2s ease;
+      margin: 0.5em;
+    }
+    .button-primary:hover {
+      background-color: #0056b3;
+      transform: translateY(-2px);
+    }
+    input[type="file"] {
+      display: none;
+    }
+    #fileName {
+      margin-top: 0.5em;
+      font-size: 14px;
+      color: #444;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+  <h1>CSV to DRM Converter🥁</h1>
+  <h2>このツールについて</h2>
+  <p>BFDからエクスポートしたCSVファイルを、Cubaseで使えるドラムマップ（.drmファイル）に変換するブラウザツールです。ソフトのインストールは不要、ブラウザ上だけで完結します。</p>
+  <h2>対応CSVファイルの形式</h2>
+  <p>CSVファイルには以下の列が必要です：</p>
+  <ul>
+    <li><code>slotID</code></li>
+    <li><code>slotName</code></li>
+    <li><code>articID</code></li>
+    <li><code>articName</code></li>
+    <li><code>note</code>（MIDIノート番号）</li>
+    <li><code>noteName</code>（例: C0, D#2 など）</li>
+  </ul>
+  <h2>使い方</h2>
+  <ol>
+    <li>ツールのページを開きます</li>
+    <li>「CSVファイルを選択」ボタンをクリック</li>
+    <li>BFDからエクスポートしたCSVファイルを選択</li>
+    <li>「変換して保存」ボタンをクリック</li>
+    <li>.drm ファイルの保存先を選択します。</li>
+  </ol>
+  <h2>出力される .drm ファイルの仕様</h2>
+  <ul>
+    <li>MIDIノート番号（0〜127）すべてに対応する128個のノードを含みます</li>
+    <li>CSVに存在するノート番号は、表示名として <code>slotName - articName</code> が使われます</li>
+    <li>存在しないノート番号は空のノードになります</li>
+    <li>Cubaseで読み込めるXML形式（ドラムマップ）で出力されます</li>
+  </ul>
+  <h2>ご注意</h2>
+  <ul>
+    <li>CSVファイルの形式が異なる場合は正しく動作しないことがあります</li>
+    <li>ファイルはローカル環境で処理されるため、安全です</li>
+  </ul>
+
+  <div class="section">
+    <div class="button-group">
+      <label class="button-primary">ファイルを選択
+        <input type="file" id="csvFile" accept=".csv" onchange="updateFileName()" />
+      </label>
+      <button
+        onclick="convertToDrm()" 
+        class="button-primary"
+      >
+        変換して保存
+      </button>
+    </div>
+    <div id="fileName">選択されたファイル：未選択</div>
+  </div>
+
+  <script>
+    function convertToDrm() {
+      const fileInput = document.getElementById('csvFile');
+      if (!fileInput.files.length) {
+        alert("CSVファイルを選択してください。");
+        return;
+      }
+
+      const file = fileInput.files[0];
+      const reader = new FileReader();
+
+      reader.onload = function(e) {
+        const csv = e.target.result;
+        const lines = csv.trim().split("\n");
+        const headers = lines[0].split(",").map(h => h.trim());
+
+        const getIndex = name => headers.indexOf(name);
+        const slotNameIdx = getIndex("slotName");
+        const articNameIdx = getIndex("articName");
+        const noteIdx = getIndex("note");
+
+        if (slotNameIdx === -1 || articNameIdx === -1 || noteIdx === -1) {
+          alert("CSVファイルに必要な列が含まれていません。");
+          return;
+        }
+
+        const csvItems = lines.slice(1).map(line => {
+          const cols = line.split(",").map(c => c.trim());
+          return {
+            note: cols[noteIdx],
+            displayName: cols[slotNameIdx] ? `${cols[slotNameIdx]} - ${cols[articNameIdx]}` : cols[articNameIdx]
+          };
+        });
+
+        csvItems.sort((a, b) => Number(a.note) - Number(b.note));
+
+        const xmlParts = [];
+        xmlParts.push('<?xml version="1.0" encoding="utf-8"?>');
+        xmlParts.push('<DrumMap>');
+        xmlParts.push(`  <string name="Name" value="${file.name.replace(/\.csv$/i, "")}" wide="true" />`);
+        xmlParts.push('  <list name="Quantize" type="list">');
+        xmlParts.push('    <item>');
+        xmlParts.push('      <int name="Grid" value="4" />');
+        xmlParts.push('      <int name="Type" value="0" />');
+        xmlParts.push('      <float name="Swing" value="0" />');
+        xmlParts.push('      <int name="Legato" value="50" />');
+        xmlParts.push('    </item>');
+        xmlParts.push('  </list>');
+        xmlParts.push('  <list name="Map" type="list">');
+
+        for (let i = 0; i < 128; i++) {
+          xmlParts.push('    <item>');
+          xmlParts.push(`      <int name="INote" value="${i}" />`);
+          xmlParts.push(`      <int name="ONote" value="${i}" />`);
+          xmlParts.push('      <int name="Channel" value="9" />');
+          xmlParts.push('      <float name="Length" value="200" />');
+          xmlParts.push('      <int name="Mute" value="0" />');
+          xmlParts.push(`      <int name="DisplayNote" value="${i}" />`);
+          xmlParts.push('      <int name="HeadSymbol" value="0" />');
+          xmlParts.push('      <int name="Voice" value="0" />');
+          xmlParts.push('      <int name="PortIndex" value="0" />');
+          const csvItem = csvItems.find(csvItem => parseInt(csvItem.note) === i);
+          if (csvItem) {
+            xmlParts.push(`      <string name="Name" value="${csvItem.displayName}" wide="true" />`);
+          } else {
+            xmlParts.push(`      <string name="Name" value="" wide="true" />`);
+          }
+          xmlParts.push('      <int name="QuantizeIndex" value="0" />');
+          xmlParts.push('    </item>');
+        };
+        xmlParts.push('  </list>');
+
+        xmlParts.push('  <list name="Order" type="int">');
+        for (let i = 0; i < 128; i++) {
+          xmlParts.push(`    <item value="${i}" />`);
+        };
+        xmlParts.push('  </list>');
+
+        xmlParts.push('  <list name="OutputDevices" type="list">');
+        xmlParts.push('    <item>');
+        xmlParts.push('      <string name="DeviceName" value="Default Device" />');
+        xmlParts.push('      <string name="PortName" value="Default Port" />');
+        xmlParts.push('    </item>');
+        xmlParts.push('  </list>');
+        xmlParts.push('  <int name="Flags" value="0" />');
+        xmlParts.push('</DrumMap>');
+
+        const xmlContent = xmlParts.join("\n");
+        const blob = new Blob([xmlContent], { type: "application/xml" });
+
+        const defaultName = file.name.replace(/\.csv$/i, ".drm");
+        const url = URL.createObjectURL(blob);
+
+        // ファイル保存ダイアログ（ファイル名指定）
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = defaultName;
+        a.click();
+
+        URL.revokeObjectURL(url);
+      };
+
+      reader.readAsText(file, 'utf-8');
+    }
+
+    function updateFileName() {
+      const fileInput = document.getElementById('csvFile');
+      const fileNameSpan = document.getElementById('fileName');
+      if (fileInput.files.length > 0) {
+          fileNameSpan.textContent = '選択されたファイル： ' + fileInput.files[0].name;
+      } else {
+          fileNameSpan.textContent = '選択されたファイル：未選択';
+      }
+    }
+  </script>
+  
+  <footer style="margin-top: 3em; padding: 1em; text-align: center; color: #666; font-size: 0.9em; border-top: 1px solid #ccc;">
+    <p>© 2025 N'jamena Company</p>
+  </footer>
+</body>
+</html>
